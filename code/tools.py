@@ -9,6 +9,13 @@ import pickle
 
 class Tools:
 
+    @staticmethod
+    def check_image_scale(image):
+        rgb_dimentions = (image[3][0])
+        if type(rgb_dimentions[0]) != np.uint8:
+            print("Color range [0, 1]: {} is not supported. Exiting with error".format(type(rgb_dimentions[0])))
+            exit(0)
+
     def get_car_noncar_images(self):
         project_path = "../"
         train_images_path = "train_images/"
@@ -21,20 +28,7 @@ class Tools:
 
         print("found {} car images and {} non-car images".format(len(cars), len(noncars)))
 
-        # use extract_features() here
-        print("MBoiko TODO. Continue here")
-        car_features = extract_features(cars, color_space=color_space,
-                                        spatial_size=spatial_size, hist_bins=hist_bins,
-                                        orient=orient, pix_per_cell=pix_per_cell,
-                                        cell_per_block=cell_per_block,
-                                        hog_channel=hog_channel, spatial_feat=spatial_feat,
-                                        hist_feat=hist_feat, hog_feat=hog_feat)
-        notcar_features = extract_features(notcars, color_space=color_space,
-                                           spatial_size=spatial_size, hist_bins=hist_bins,
-                                           orient=orient, pix_per_cell=pix_per_cell,
-                                           cell_per_block=cell_per_block,
-                                           hog_channel=hog_channel, spatial_feat=spatial_feat,
-                                           hist_feat=hist_feat, hog_feat=hog_feat)
+        return cars, noncars
 
     @staticmethod
     def get_image_from_dir(path, name_pattern):
@@ -137,15 +131,11 @@ class Tools:
         return [text_radius, text_offset]
 
     @staticmethod
-    def dump_parameters(mtx, dist, transform_mtx, inverse_transform_mtx, width, height):
+    def dump_parameters(params_array, file_name):
         project_path = "./"
-        f = open(project_path+'camera_parameters.pkl', 'wb')
-        pickle.dump(mtx, f)
-        pickle.dump(dist, f)
-        pickle.dump(transform_mtx, f)
-        pickle.dump(inverse_transform_mtx, f)
-        pickle.dump(width, f)
-        pickle.dump(height, f)
+        f = open(project_path+file_name+'.pkl', 'wb')
+        for param in params_array:
+            pickle.dump(param, f)
         f.close()
 
     @staticmethod

@@ -7,8 +7,6 @@ from line import Line
 from vehicle_detector import VehicleDetector
 
 
-print("Start processing images.")
-
 tools = Tools()
 imageProcessing = ImageProcessingUtilities()
 videoStreamProcessing = VideoStreamProcessing()
