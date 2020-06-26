@@ -8,7 +8,7 @@ from skimage.feature import hog
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 import time
-from inspect import currentframe, getframeinfo
+from image_processing_utilities import ImageProcessingUtilities
 
 
 class VehicleDetector:
@@ -16,6 +16,7 @@ class VehicleDetector:
     def __init__(self):
         self.tools = Tools()
         self.image_scaling_checked = False
+        self.imageProcessing = ImageProcessingUtilities()
 
     @staticmethod
     def bin_spatial(img, size=(32, 32)):
@@ -83,15 +84,15 @@ class VehicleDetector:
                            transform_sqrt=True, feature_vector=feature_vec)
             return features
 
-    def extract_features(self, imgs, color_space='RGB', spatial_size=(32, 32),
+    def extract_features(self, imgs, color_space='YCrCb', spatial_size=(32, 32),
                          hist_bins=32, orient=9,
-                         pix_per_cell=8, cell_per_block=2, hog_channel=0,
+                         pix_per_cell=8, cell_per_block=2, hog_channel='ALL',
                          spatial_feat=True, hist_feat=True, hog_feat=True):
         """
         Function to extract features from a list of images
 
         :param imgs: array with image paths, what should be loaded and processed
-        :param color_space: color space, in which each image should be converted and afterwards proessed
+        :param color_space: color space, in which each image should be converted and afterwards processed
         :param spatial_size: Spatial binning dimensions
         :param hist_bins: Number of histogram bins
         :param orient: Histogram Orientation Gradient (HOG) orientations
@@ -110,8 +111,10 @@ class VehicleDetector:
         for file in imgs:
             file_features = []
 
+            # image = mpimg.imread(file)
+            # image = image.astype(np.float32)*255
+
             # use cv2.imread to scale PNG images in the [0, 255] range
-            #image = mpimg.imread(file)
             image = cv2.imread(file)
 
             if not self.image_scaling_checked:
@@ -159,13 +162,13 @@ class VehicleDetector:
         return features
 
     def train_classifier(self):
-        color_space = 'RGB'  # Can be RGB, HSV, LUV, HLS, YUV, YCrCb
+        color_space = 'YCrCb'  # Can be RGB, HSV, LUV, HLS, YUV, YCrCb
         orient = 9  # HOG orientations
         pix_per_cell = 8  # HOG pixels per cell
         cell_per_block = 2  # HOG cells per block
-        hog_channel = 0  # Can be 0, 1, 2, or "ALL"
-        spatial_size = (16, 16)  # Spatial binning dimensions
-        hist_bins = 16  # Number of histogram bins
+        hog_channel = 'ALL'  # Can be 0, 1, 2, or "ALL"
+        spatial_size = (32, 32)  # Spatial binning dimensions
+        hist_bins = 32  # Number of histogram bins
         spatial_feat = True  # Spatial features on or off
         hist_feat = True  # Histogram features on or off
         hog_feat = True  # HOG features on or off
@@ -226,26 +229,86 @@ class VehicleDetector:
                                    "svm_params")
         print("SVM Parameters successfully dumped")
 
-        cf = currentframe()
-        filename = getframeinfo(cf).filename
-        print("Proceed in file {}, line {}".format(filename, cf.f_lineno ))
+    def detect_vehicles(self, img, ystart, ystop, scale, svc, X_scaler, orient, pix_per_cell, cell_per_block, spatial_size, hist_bins):
+        """
+        Extract features using hog sub-sampling and make predictions
 
-        # image = mpimg.imread('bbox-example-image.jpg')
-        # draw_image = np.copy(image)
-        # Uncomment the following line if you extracted training
-        # data from .png images (scaled 0 to 1 by mpimg) and the
-        # image you are searching is a .jpg (scaled 0 to 255)
-        # image = image.astype(np.float32)/255
+        :param img: an image, where vehicles should be found
+        :param ystart: value on the y-axis of the image, where the search should start
+        :param ystop: value on the y-axis of the image, where the search should end
+        :param scale:
+        :param svc:
+        :param X_scaler:
+        :param orient:
+        :param pix_per_cell:
+        :param cell_per_block:
+        :param spatial_size:
+        :param hist_bins:
+        :return:
+        """
 
-        # windows = slide_window(image, x_start_stop=[None, None], y_start_stop=y_start_stop,
-        #                        xy_window=(96, 96), xy_overlap=(0.5, 0.5))
-        #
-        # hot_windows = search_windows(image, windows, svc, X_scaler, color_space=color_space,
-        #                              spatial_size=spatial_size, hist_bins=hist_bins,
-        #                              orient=orient, pix_per_cell=pix_per_cell,
-        #                              cell_per_block=cell_per_block,
-        #                              hog_channel=hog_channel, spatial_feat=spatial_feat,
-        #                              hist_feat=hist_feat, hog_feat=hog_feat)
-        #
-        # window_img = draw_boxes(draw_image, hot_windows, color=(0, 0, 255), thick=6)
-        # plt.imshow(window_img)
+        draw_img = np.copy(img)
+        #img = img.astype(np.float32) / 255
+        #img_tosearch = img[ystart:ystop, :, :]
+        img_tosearch = draw_img[ystart:ystop, :, :]
+
+        ctrans_tosearch = self.imageProcessing.convert_color(img_tosearch, conv='RGB2YCrCb')
+        if scale != 1:
+            imshape = ctrans_tosearch.shape
+            ctrans_tosearch = cv2.resize(ctrans_tosearch, (np.int(imshape[1] / scale), np.int(imshape[0] / scale)))
+
+        ch1 = ctrans_tosearch[:, :, 0]
+        ch2 = ctrans_tosearch[:, :, 1]
+        ch3 = ctrans_tosearch[:, :, 2]
+
+        # Define blocks and steps as above
+        nxblocks = (ch1.shape[1] // pix_per_cell) - cell_per_block + 1
+        nyblocks = (ch1.shape[0] // pix_per_cell) - cell_per_block + 1
+        nfeat_per_block = orient * cell_per_block ** 2
+
+        # 64 was the orginal sampling rate, with 8 cells and 8 pix per cell
+        window = 64
+        nblocks_per_window = (window // pix_per_cell) - cell_per_block + 1
+        cells_per_step = 2  # Instead of overlap, define how many cells to step
+        nxsteps = (nxblocks - nblocks_per_window) // cells_per_step + 1
+        nysteps = (nyblocks - nblocks_per_window) // cells_per_step + 1
+
+        # Compute individual channel HOG features for the entire image
+        hog1 = self.get_hog_features(ch1, orient, pix_per_cell, cell_per_block, feature_vec=False)
+        hog2 = self.get_hog_features(ch2, orient, pix_per_cell, cell_per_block, feature_vec=False)
+        hog3 = self.get_hog_features(ch3, orient, pix_per_cell, cell_per_block, feature_vec=False)
+
+        for xb in range(nxsteps):
+            for yb in range(nysteps):
+                ypos = yb * cells_per_step
+                xpos = xb * cells_per_step
+                # Extract HOG for this patch
+                hog_feat1 = hog1[ypos:ypos + nblocks_per_window, xpos:xpos + nblocks_per_window].ravel()
+                hog_feat2 = hog2[ypos:ypos + nblocks_per_window, xpos:xpos + nblocks_per_window].ravel()
+                hog_feat3 = hog3[ypos:ypos + nblocks_per_window, xpos:xpos + nblocks_per_window].ravel()
+                hog_features = np.hstack((hog_feat1, hog_feat2, hog_feat3))
+
+                xleft = xpos * pix_per_cell
+                ytop = ypos * pix_per_cell
+
+                # Extract the image patch
+                subimg = cv2.resize(ctrans_tosearch[ytop:ytop + window, xleft:xleft + window], (64, 64))
+
+                # Get color features
+                spatial_features = self.bin_spatial(subimg, size=spatial_size)
+                hist_features = self.color_hist(subimg, nbins=hist_bins)
+
+                # Scale features and make a prediction
+                test_features = X_scaler.transform(
+                    np.hstack((spatial_features, hist_features, hog_features)).reshape(1, -1))
+                # test_features = X_scaler.transform(np.hstack((shape_feat, hist_feat)).reshape(1, -1))
+                test_prediction = svc.predict(test_features)
+
+                if test_prediction == 1:
+                    xbox_left = np.int(xleft * scale)
+                    ytop_draw = np.int(ytop * scale)
+                    win_draw = np.int(window * scale)
+                    cv2.rectangle(draw_img, (xbox_left, ytop_draw + ystart),
+                                  (xbox_left + win_draw, ytop_draw + win_draw + ystart), (0, 0, 255), 6)
+
+        return draw_img

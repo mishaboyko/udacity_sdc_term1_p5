@@ -316,3 +316,12 @@ class ImageProcessingUtilities:
 
         # self.tools.plot_image(result, im_name)
         return result
+
+    @staticmethod
+    def convert_color(img, conv='RGB2YCrCb'):
+        if conv == 'RGB2YCrCb':
+            return cv2.cvtColor(img, cv2.COLOR_RGB2YCrCb)
+        if conv == 'BGR2YCrCb':
+            return cv2.cvtColor(img, cv2.COLOR_BGR2YCrCb)
+        if conv == 'RGB2LUV':
+            return cv2.cvtColor(img, cv2.COLOR_RGB2LUV)

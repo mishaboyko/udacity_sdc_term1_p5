@@ -11,9 +11,15 @@ class Tools:
 
     @staticmethod
     def check_image_scale(image):
-        rgb_dimentions = (image[3][0])
-        if type(rgb_dimentions[0]) != np.uint8:
-            print("Color range [0, 1]: {} is not supported. Exiting with error".format(type(rgb_dimentions[0])))
+        rgb_dimensions = (image[3][0])
+        if type(rgb_dimensions[0]) != np.uint8:
+            print("Color range [0, 1]: {} is not supported. Exiting with error".format(type(rgb_dimensions[0])))
+            print("Consider apply [0, 255] scaling: image = image.astype(np.float32)*255")
+            # Scale down to [0, 1] color range
+            # image = image.astype(np.float32)/255
+            # Scale up to [0, 255] color range
+            # image = image.astype(np.float32)*255
+
             exit(0)
 
     def get_car_noncar_images(self):
@@ -132,20 +138,19 @@ class Tools:
 
     @staticmethod
     def dump_parameters(params_array, file_name):
-        project_path = "./"
+        project_path = "../"
         f = open(project_path+file_name+'.pkl', 'wb')
         for param in params_array:
             pickle.dump(param, f)
         f.close()
 
     @staticmethod
-    def load_params():
-        fh = open('../camera_parameters.pkl', 'rb')
-        mtx = pickle.load(fh)
-        dist = pickle.load(fh)
-        transform_mtx = pickle.load(fh)
-        inverse_transform_mtx = pickle.load(fh)
-        width = pickle.load(fh)
-        height = pickle.load(fh)
+    def load_params(params_count, file_name):
+        fh = open('../'+file_name, 'rb')
+        params = []
+
+        for pos in range(0, params_count):
+            params.append(pickle.load(fh))
+
         fh.close()
-        return mtx, dist, transform_mtx, inverse_transform_mtx, width, height
+        return params
