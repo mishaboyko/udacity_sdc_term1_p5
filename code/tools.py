@@ -5,6 +5,7 @@ import math
 import matplotlib.image as mpimg
 import matplotlib.pyplot as plt
 import pickle
+import os.path
 
 
 class Tools:
@@ -146,11 +147,18 @@ class Tools:
 
     @staticmethod
     def load_params(params_count, file_name):
-        fh = open('../'+file_name, 'rb')
         params = []
+        if os.path.isfile('../'+file_name):
+            print("{} found. Loading parameters".format(file_name))
+            fh = open('../'+file_name, 'rb')
 
-        for pos in range(0, params_count):
-            params.append(pickle.load(fh))
+            for pos in range(0, params_count):
+                params.append(pickle.load(fh))
 
-        fh.close()
+            fh.close()
+        else:
+            print("File '{}' doesn't exist".format(file_name))
+            params = [None] * params_count
         return params
+
+

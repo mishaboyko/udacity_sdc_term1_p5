@@ -318,10 +318,19 @@ class ImageProcessingUtilities:
         return result
 
     @staticmethod
-    def convert_color(img, conv='RGB2YCrCb'):
-        if conv == 'RGB2YCrCb':
-            return cv2.cvtColor(img, cv2.COLOR_RGB2YCrCb)
-        if conv == 'BGR2YCrCb':
-            return cv2.cvtColor(img, cv2.COLOR_BGR2YCrCb)
-        if conv == 'RGB2LUV':
-            return cv2.cvtColor(img, cv2.COLOR_RGB2LUV)
+    def convert_color(img, conv='YCrCb'):
+        if conv != 'RGB':
+            if conv == 'YCrCb':
+                return cv2.cvtColor(img, cv2.COLOR_RGB2YCrCb)
+            if conv == 'HSV':
+                return cv2.cvtColor(img, cv2.COLOR_RGB2HSV)
+            if conv == 'HLS':
+                return cv2.cvtColor(img, cv2.COLOR_RGB2HLS)
+            if conv == 'YUV':
+                return cv2.cvtColor(img, cv2.COLOR_RGB2YUV)
+            if conv == 'BGR2YCrCb':
+                return cv2.cvtColor(img, cv2.COLOR_BGR2YCrCb)
+            if conv == 'LUV':
+                return cv2.cvtColor(img, cv2.COLOR_RGB2LUV)
+        else:
+            return np.copy(img)
