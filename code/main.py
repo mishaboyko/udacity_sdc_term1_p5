@@ -7,12 +7,12 @@ from video_stream_processing import VideoStreamProcessing
 from line import Line
 from vehicle_detector import VehicleDetector
 
-
 tools = Tools()
 imageProcessing = ImageProcessingUtilities()
 videoStreamProcessing = VideoStreamProcessing()
 vehicleDetector = VehicleDetector()
 left_right_lines = [Line(), Line()]
+
 # camera parameters
 global mtx, dist, transform_mtx, inverse_transform_mtx, width, height
 
@@ -87,19 +87,11 @@ def main():
     mtx, dist, transform_mtx, inverse_transform_mtx, width, height = tools.load_params(camera_params_count,
                                                                                        'camera_parameters.pkl')
 
-    project_path = "../"
-    test_images_path = "test_images/"
-    name_pattern = '*.jpg'
-    images, im_names = tools.get_image_from_dir(project_path+test_images_path, name_pattern)
+    # Step 2: process test images
+    # imageProcessing.process_test_images(process_frame)
 
-    # Step 2: single images testing pipeline
-    for pos, test_image in enumerate(images):
-        im_name = im_names[pos].split('/')[-1].split('.')[0]
-        image = process_frame(test_image, im_name)
-        tools.plot_image(image, "image with detected vehicles")
-    #
     # # Step 3: video stream processing pipeline
-    # videoStreamProcessing.process_video(process_frame)
+    videoStreamProcessing.process_video(process_frame)
 
 
 # Program start

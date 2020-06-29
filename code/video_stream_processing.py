@@ -115,11 +115,11 @@ class VideoStreamProcessing:
 
     @staticmethod
     def process_video(process_frame):
-        project_path = "./"
+        project_path = "../"
         video_input = "project_video.mp4"
         video_output = 'output_video/project_video_out.mp4'
 
-        clip = VideoFileClip(project_path+video_input)#.subclip(0, 5)
+        clip = VideoFileClip(project_path+video_input).subclip(40, 45)
         white_clip = clip.fl_image(process_frame)  # NOTE: this function expects color images!!
         white_clip.write_videofile(project_path+video_output, audio=False)
 

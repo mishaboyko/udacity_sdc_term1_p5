@@ -1,15 +1,16 @@
-import matplotlib.image as mpimg
-from sklearn.svm import LinearSVC
-
-from tools import Tools
 import numpy as np
 import cv2
+import time
+
+from sklearn.svm import LinearSVC
 from skimage.feature import hog
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
-import time
-from image_processing_utilities import ImageProcessingUtilities
+from scipy.ndimage.measurements import label
 
+from tools import Tools
+from image_processing_utilities import ImageProcessingUtilities
+from vehicles_tracker import VehiclesTracker
 
 class VehicleDetector:
 
@@ -30,6 +31,7 @@ class VehicleDetector:
 
         self.tools = Tools()
         self.imageProcessing = ImageProcessingUtilities()
+        self.vehiclesTracker = VehiclesTracker()
 
         # Load parameters if corresponding pickle file available
         classifier_params_count = 2
@@ -114,6 +116,7 @@ class VehicleDetector:
         for file in imgs:
             file_features = []
 
+            # import matplotlib.image as mpimg
             # image = mpimg.imread(file)
             # image = image.astype(np.float32)*255
 
@@ -148,6 +151,54 @@ class VehicleDetector:
             features.append(np.concatenate(file_features))
         # Return list of feature vectors
         return features
+
+    @staticmethod
+    def add_heat(heatmap, bbox_list):
+        # Iterate through list of bboxes
+        for box in bbox_list:
+            # Add += 1 for all pixels inside each bbox
+            # Assuming each "box" takes the form ((x1, y1), (x2, y2))
+            heatmap[box[0][1]:box[1][1], box[0][0]:box[1][0]] += 1
+
+        # Return updated heatmap
+        return heatmap  # Iterate through list of bboxes
+
+    @staticmethod
+    def apply_threshold(heatmap, threshold):
+        # Zero out pixels below the threshold
+        heatmap[heatmap <= threshold] = 0
+        # Return thresholded map
+        return heatmap
+
+    def draw_labeled_bboxes(self, img, labels):
+        # Iterate through all detected cars
+        cars_per_frame = {}
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        fontScale = 1
+        lineType = 2
+
+        for car_number in range(1, labels[1] + 1):
+            # Find pixels with each car_number label value
+            nonzero = (labels[0] == car_number).nonzero()
+            # Identify x and y values of those pixels
+            nonzeroy = np.array(nonzero[0])
+            nonzerox = np.array(nonzero[1])
+            # Define a bounding box based on min/max x and y
+            bbox = ((np.min(nonzerox), np.min(nonzeroy)), (np.max(nonzerox), np.max(nonzeroy)))
+            cars_per_frame[car_number] = bbox
+            # Draw the box on the image
+            cv2.rectangle(img, bbox[0], bbox[1], (124, 252, 0), 6)
+            cv2.putText(img, str(car_number), bbox[0], font, fontScale, (124, 252, 0), lineType)
+
+        self.vehiclesTracker.add_cars_in_frame(cars_per_frame)
+        cars_bboxes = self.vehiclesTracker.get_smoothed_vehicles_bboxes()
+        for car_num, bbox in enumerate(cars_bboxes.values()):
+            cv2.rectangle(img, bbox[0], bbox[1], (0, 0, 255), 6)
+            cv2.putText(img, str(car_num), bbox[0], font, fontScale, (0, 0, 255), lineType)
+
+
+        # Return the image
+        return img
 
     def train_classifier(self):
         spatial_feat = True     # Spatial features on or off
@@ -214,6 +265,7 @@ class VehicleDetector:
         #img = img.astype(np.float32) / 255
         #img_tosearch = img[ystart:ystop, :, :]
         img_tosearch = img[ystart:ystop, :, :]
+        heat = np.zeros_like(img[:, :, 0]).astype(np.float)
 
         ctrans_tosearch = self.imageProcessing.convert_color(img_tosearch, conv='YCrCb')
         if scale != 1:
@@ -240,6 +292,8 @@ class VehicleDetector:
         hog1 = self.get_hog_features(ch1, feature_vec=False)
         hog2 = self.get_hog_features(ch2, feature_vec=False)
         hog3 = self.get_hog_features(ch3, feature_vec=False)
+
+        frame_detected_boxes = []
 
         for xb in range(nxsteps):
             for yb in range(nysteps):
@@ -270,6 +324,34 @@ class VehicleDetector:
                     xbox_left = np.int(xleft * scale)
                     ytop_draw = np.int(ytop * scale)
                     win_draw = np.int(window * scale)
-                    cv2.rectangle(output_image, (xbox_left, ytop_draw + ystart),
-                                  (xbox_left + win_draw, ytop_draw + win_draw + ystart), (0, 0, 255), 6)
-        return output_image
+                    frame_detected_boxes.append(((xbox_left, ytop_draw + ystart),
+                                                 (xbox_left + win_draw, ytop_draw + win_draw + ystart)))
+                    # cv2.rectangle(output_image, frame_detected_boxes[-1][0], frame_detected_boxes[-1][1],
+                    #               (0, 0, 255), 6)
+
+        # Add heat to each box in box list
+        heat = self.add_heat(heat, frame_detected_boxes)
+
+        # Apply threshold to help remove false positives
+        heat = self.apply_threshold(heat, 1)
+
+        # Visualize the heatmap when displaying
+        heatmap = np.clip(heat, 0, 255)
+
+        # Find final boxes from heatmap using label function
+        labels = label(heatmap)
+        draw_img = self.draw_labeled_bboxes(output_image, labels)
+
+        # uncomment below to plot heat map per frame
+        # import matplotlib.pyplot as plt
+        # fig = plt.figure()
+        # plt.subplot(121)
+        # plt.imshow(draw_img)
+        # plt.title('Car Positions')
+        # plt.subplot(122)
+        # plt.imshow(heatmap, cmap='hot')
+        # plt.title('Heat Map')
+        # fig.tight_layout()
+        # plt.show()
+
+        return draw_img

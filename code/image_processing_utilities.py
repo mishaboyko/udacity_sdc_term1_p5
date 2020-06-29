@@ -334,3 +334,15 @@ class ImageProcessingUtilities:
                 return cv2.cvtColor(img, cv2.COLOR_RGB2LUV)
         else:
             return np.copy(img)
+
+    def process_test_images(self, process_frame):
+        project_path = "../"
+        test_images_path = "test_images/"
+        name_pattern = '*.jpg'
+        images, im_names = self.tools.get_image_from_dir(project_path + test_images_path, name_pattern)
+
+        # Step 2: single images testing pipeline
+        for pos, test_image in enumerate(images):
+            im_name = im_names[pos].split('/')[-1].split('.')[0]
+            image = process_frame(test_image, im_name)
+            self.tools.plot_image(image, "image with detected vehicles")
