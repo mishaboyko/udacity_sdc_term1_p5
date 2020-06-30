@@ -190,15 +190,15 @@ class VehicleDetector:
             else:
                 detections_per_frame.append(bbox)
             # Draw the box on the image for debugging purposes
-            cv2.rectangle(img, bbox[0], bbox[1], (124, 252, 0), 6)
-            #cv2.putText(img, str(car_number), bbox[0], font, fontScale, (124, 252, 0), lineType)
+            # cv2.rectangle(img, bbox[0], bbox[1], (124, 252, 0), 6)
+            # cv2.putText(img, str(car_number), bbox[0], font, fontScale, (124, 252, 0), lineType)
 
-        # if detections_per_frame:
-        #     self.vehiclesTracker.add_detections_in_frame(detections_per_frame)
-        #     cars_bboxes = self.vehiclesTracker.get_vehicles_bboxes()
-        #     for car_num, bbox in enumerate(cars_bboxes.values()):
-        #         cv2.rectangle(img, bbox[0], bbox[1], (0, 0, 255), 6)
-        #         cv2.putText(img, "car "+str(car_num), bbox[0], font, fontScale, (0, 0, 255), lineType)
+        if detections_per_frame:
+            self.vehiclesTracker.add_detections_in_frame(detections_per_frame)
+            cars_bboxes = self.vehiclesTracker.get_vehicles_bboxes()
+            for car_num, bbox in enumerate(cars_bboxes.values()):
+                cv2.rectangle(img, bbox[0], bbox[1], (0, 0, 255), 6)
+                cv2.putText(img, "car "+str(car_num), bbox[0], font, fontScale, (0, 0, 255), lineType)
 
         # Return the image
         return img

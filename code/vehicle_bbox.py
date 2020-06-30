@@ -5,7 +5,7 @@ class VehicleBBox:
 
     def __init__(self):
         # x values of the last N fits of the line. Ringbuffer
-        self.ringbuffer_length = 8
+        self.ringbuffer_length = 7
         self.reliable_detection_sequence = 2
         self.recent_bboxes = collections.deque(maxlen=self.ringbuffer_length)
         self.averaged_bbox = ((0, 0), (0, 0))
@@ -16,7 +16,7 @@ class VehicleBBox:
         self.bbox_length = 200    # in px
 
     def reset_remove_in_frames(self):
-        self.remove_in_frames = 3
+        self.remove_in_frames = 0
 
     def update_averaged_bbox(self):
         point_top_left_x = 0

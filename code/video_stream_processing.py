@@ -120,7 +120,7 @@ class VideoStreamProcessing:
         video_input = "project_video.mp4"
         video_output = 'output_video/project_video_out.mp4'
 
-        clip = VideoFileClip(project_path+video_input)  # .subclip(39, 45)
+        clip = VideoFileClip(project_path+video_input)  # .subclip(35, 45)
         white_clip = clip.fl_image(process_frame)  # NOTE: this function expects color images!!
         white_clip.write_videofile(project_path+video_output, audio=False)
 

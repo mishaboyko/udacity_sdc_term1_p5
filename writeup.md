@@ -65,6 +65,10 @@ The implementation of this approach can be found in lines 256-361, function `det
 
 For each window, in case of successful vehicle detection, I've collected all bounding boxes, and applied a heatmap to get multiple detections overlap and this increase the detection probability of the vehicle. This functionality is invoked in lines 335 - 343, function `detect_vehicles()` of the file `vehicle_detector.py`.  The implementation of these functions can be found in lines 156 - 171, functions `add_heat()` and `apply_threshold()` of the file `vehicle_detector.py`. 
 
+### Vehicle tracker
+---
+Since the whole pipeline still generated some false positives and the bounding boxes of the detections weren't smooth, I have implemented 2 additional classes: `VehiclesTracker`, file `vehicles_tracker.py` and `VehicleBBox`, file `vehicle_bbox.py`. The idea behind it is to track the bounding boxes of each detection over multiple frames, smooth out detections as well as bounding boxes all over the video stream processing.
+
 ### Examples of test images to demonstrate how your pipeline is working
 ---
 #### Sliding window
@@ -102,7 +106,19 @@ Here's a [link to my video result](./output_video/project_video_out.mp4)
 
 #### Filter for false positives and combination of overlapping bounding boxes
 
-I recorded the positions of positive detections in each frame of the video.  From the positive detections I created a heatmap and then thresholded that map to identify vehicle positions. In line 339 of the file `vehicle_detector.py` I've set the threshold to 2/8 for the heatmap  I then used `scipy.ndimage.measurements.label()` to identify individual blobs in the heatmap.  I then assumed each entry corresponds to a vehicle.  I constructed bounding boxes to cover the area of each bounding box detected. 
+I recorded the positions of positive detections in each frame of the video.  From the positive detections I created a heatmap and then thresholded that map to identify vehicle positions. In line 339 of the file `vehicle_detector.py` I've set the threshold to 2/8 for the heatmap  I then used `scipy.ndimage.measurements.label()` to identify individual blobs in the heatmap.  I then assumed each blob corresponded to a vehicle.  I constructed bounding boxes to cover the area of each bounding box detected. This approach didn't provide me satisfiable results because of false positive detections also right in front of the vehicle, which is unacceptable. Reason of it that `scipy.ndimage.measurements.label()` puts labels onto detections from top left to bottom right and for each frame individually. Thus, in case of false positive detection, the vehicle 1 can be identified on multiple places along the video stream over different frames. 
+
+That's why I've applied another approach, where I've analyzed top left points of each detection and depending on the margins of the bounding box for a point, I have assigned the detection to a specific vehicle. The acceptance margins for the top left point of each bounding box are set in file `vehicles_tracker.py`, lines 9-10. The code of this implementation can be found in lines 12 - 30 in function `get_most_suitable_tracker_id()` of the file `vehicles_tracker.py`
+
+#### Tracking vehicle
+
+For each vehicle a VehicleBBox class is created (file `vehicle_bbox.py`). This way previous detections of the vehicle are tracked over multiple frames to smooth out the bounding box and false negative detections.
+
+#### Averaging bounding box and vehicle tracking
+
+In order to smooth the tracking of the vehicle, I have assigned an averaged bounding box to each detected and tracked vehicle, that appears over multiple frames. The code can be found in lines 21 - 39, function `update_averaged_bbox()` of file `vehicle_bbox.py`.
+
+The values for the size of queue, threshold for significant detections as well as threshold for removing the detections from the queue can be fine-tuned.
 
 ---
 
@@ -112,7 +128,11 @@ I recorded the positions of positive detections in each frame of the video.  Fro
 
 There are multiple problems I have occurred. The biggest one is the smooth transition of bounding boxes from frame to frame basically to track each vehicle. 
 
-Another problem was to separate false positive detections from sporadic true positive detections.
+Another problem was to separate false positive detections from sporadic true positive detections. Thus it was difficult to find a good combination of values:
+
+* in how many frames an image should be detected to be declared as reliable
+* how many vehicle detections should be stored per vehicle, to assure smooth and reliable tracking
+* from which frame the sequence of true positive detections should be disqualified due to uncertainty
 
 #### Where will your pipeline likely fail?
 

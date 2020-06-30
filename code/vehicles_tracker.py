@@ -6,7 +6,7 @@ class VehiclesTracker:
     def __init__(self):
         # x values of the last 5 fits of the line. Ringbuffer
         self.vehicle_bboxes = dict()
-        self.deviation_x = 30   # +/- in px
+        self.deviation_x = 60   # +/- in px
         self.deviation_y = 20   # +/- in px
 
     def get_most_suitable_tracker_id(self, bbox):
@@ -21,13 +21,13 @@ class VehiclesTracker:
             if x_diff <= self.deviation_x and y_diff <= self.deviation_y:
                 # remove previous best match if the new one is closer to already tracked bbox
                 best_match_key = list(best_match.keys())[0]
-                if (best_match_key < 0) or (best_match[best_match_key][0] > x_diff and best_match[best_match_key][1] > y_diff):
+                if (best_match_key < 0): # or (best_match[best_match_key][0] > x_diff and best_match[best_match_key][1] > y_diff):
                     best_match.clear()
                 # set new best match
                 best_match[tracker_id] = (x_diff, y_diff)
 
-        # must be 1 key at all of times
-        return list(best_match.keys())[0]
+        # allow multiple matches for one detection
+        return list(best_match.keys()) #[0]
 
     def add_detection(self, bbox):
         """
@@ -38,13 +38,13 @@ class VehiclesTracker:
         :param bbox: a bounding box in format (topLeftPoint(x, y), bottomRightPoint(x, y))
         :return:
         """
-        tracker_id = self.get_most_suitable_tracker_id(bbox)
-        if tracker_id in self.vehicle_bboxes:
-            self.vehicle_bboxes[tracker_id].add_bbox(bbox)
-        else:
-            new_vehicle_bbox = VehicleBBox()
-            new_vehicle_bbox.add_bbox(bbox)
-            self.vehicle_bboxes[len(self.vehicle_bboxes)] = new_vehicle_bbox
+        for tracker_id in self.get_most_suitable_tracker_id(bbox):
+            if tracker_id in self.vehicle_bboxes:
+                self.vehicle_bboxes[tracker_id].add_bbox(bbox)
+            else:
+                new_vehicle_bbox = VehicleBBox()
+                new_vehicle_bbox.add_bbox(bbox)
+                self.vehicle_bboxes[len(self.vehicle_bboxes)] = new_vehicle_bbox
         return len(self.vehicle_bboxes)-1
 
     def add_detections_in_frame(self, detections):
