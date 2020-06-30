@@ -172,7 +172,7 @@ class VehicleDetector:
 
     def draw_labeled_bboxes(self, img, labels):
         # Iterate through all detected cars
-        cars_per_frame = {}
+        detections_per_frame = None
         font = cv2.FONT_HERSHEY_SIMPLEX
         fontScale = 1
         lineType = 2
@@ -185,17 +185,20 @@ class VehicleDetector:
             nonzerox = np.array(nonzero[1])
             # Define a bounding box based on min/max x and y
             bbox = ((np.min(nonzerox), np.min(nonzeroy)), (np.max(nonzerox), np.max(nonzeroy)))
-            cars_per_frame[car_number] = bbox
-            # Draw the box on the image
-            cv2.rectangle(img, bbox[0], bbox[1], (124, 252, 0), 6)
-            cv2.putText(img, str(car_number), bbox[0], font, fontScale, (124, 252, 0), lineType)
+            if detections_per_frame is None:
+                detections_per_frame = [bbox]
+            else:
+                detections_per_frame.append(bbox)
+            # Draw the box on the image for debugging purposes
+            # cv2.rectangle(img, bbox[0], bbox[1], (124, 252, 0), 6)
+            # cv2.putText(img, str(car_number), bbox[0], font, fontScale, (124, 252, 0), lineType)
 
-        self.vehiclesTracker.add_cars_in_frame(cars_per_frame)
-        cars_bboxes = self.vehiclesTracker.get_smoothed_vehicles_bboxes()
-        for car_num, bbox in enumerate(cars_bboxes.values()):
-            cv2.rectangle(img, bbox[0], bbox[1], (0, 0, 255), 6)
-            cv2.putText(img, str(car_num), bbox[0], font, fontScale, (0, 0, 255), lineType)
-
+        if detections_per_frame:
+            self.vehiclesTracker.add_detections_in_frame(detections_per_frame)
+            cars_bboxes = self.vehiclesTracker.get_vehicles_bboxes()
+            for car_num, bbox in enumerate(cars_bboxes.values()):
+                cv2.rectangle(img, bbox[0], bbox[1], (0, 0, 255), 6)
+                cv2.putText(img, "car "+str(car_num), bbox[0], font, fontScale, (0, 0, 255), lineType)
 
         # Return the image
         return img
@@ -333,10 +336,11 @@ class VehicleDetector:
         heat = self.add_heat(heat, frame_detected_boxes)
 
         # Apply threshold to help remove false positives
-        heat = self.apply_threshold(heat, 1)
+        heat = self.apply_threshold(heat, 2)
 
         # Visualize the heatmap when displaying
         heatmap = np.clip(heat, 0, 255)
+        # self.tools.plot_image(heatmap)
 
         # Find final boxes from heatmap using label function
         labels = label(heatmap)
