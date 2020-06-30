@@ -16,7 +16,7 @@ class VehicleBBox:
         self.bbox_length = 200    # in px
 
     def reset_remove_in_frames(self):
-        self.remove_in_frames = 2
+        self.remove_in_frames = 3
 
     def update_averaged_bbox(self):
         point_top_left_x = 0
