@@ -71,10 +71,10 @@ def process_frame(frame, im_name="No name"):
                                                          left_right_lines[0].bestx, left_right_lines[1].bestx,
                                                          inverse_transform_mtx, text_lines, im_name)
 
-    ystart = 380
-    ystop = 656
-    scale = 1.5
-    output_image = vehicleDetector.detect_vehicles(frame, output_image, ystart, ystop, scale)
+    # ystart, ystop, scale
+    y_ranges = [[400, 464, 1.0],  [416, 480, 1.0], [400, 496, 1.5], [400, 656, 1.5], [400, 528, 2],
+                [400, 580, 2], [400, 560, 2.5]]
+    output_image = vehicleDetector.detect_vehicles(frame, output_image, y_ranges)
     return output_image
 
 

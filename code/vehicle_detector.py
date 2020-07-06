@@ -1,5 +1,6 @@
 import numpy as np
 import cv2
+import matplotlib.image as mpimg
 import time
 
 from sklearn.svm import LinearSVC
@@ -10,7 +11,8 @@ from scipy.ndimage.measurements import label
 
 from tools import Tools
 from image_processing_utilities import ImageProcessingUtilities
-from vehicles_tracker import VehiclesTracker
+from detection_tracker import DetectionTracker
+
 
 class VehicleDetector:
 
@@ -19,19 +21,20 @@ class VehicleDetector:
         self.X_scaler = None
 
         # set default parameters first
-        self.color_space = 'YCrCb'      # Can be YCrCb, RGB, HSV, HLS, YUV, BGR2YCrCb, LUV
+        self.color_space = 'YUV'        # Can be YCrCb, RGB, HSV, HLS, YUV, BGR2YCrCb, LUV
         self.hog_channel = 'ALL'        # Numbers of HOG Channels to extract. Value range: [0, 1, 2, ALL]
-        self.orient = 9                 # HOG orientations
-        self.pixel_per_cell = 8         # HOG pixels per cell
+        self.orient = 11                # HOG orientations
+        self.pixel_per_cell = 16        # HOG pixels per cell
         self.cell_per_block = 2         # HOG cells per block
-        self.spatial_size = (64, 64)    # Spatial binning dimensions
+        self.spatial_size = (16, 16)    # Spatial binning dimensions
         self.hist_bins = 32             # Number of histogram bins
+        self.heat_threshold = 3         # plus half the size the buffer of detections from previous frames
 
         self.image_scaling_checked = False
 
         self.tools = Tools()
         self.imageProcessing = ImageProcessingUtilities()
-        self.vehiclesTracker = VehiclesTracker()
+        self.detectionTracker = DetectionTracker()
 
         # Load parameters if corresponding pickle file available
         classifier_params_count = 2
@@ -86,8 +89,7 @@ class VehicleDetector:
             features, hog_image = hog(img, orientations=self.orient,
                                       pixels_per_cell=(self.pixel_per_cell, self.pixel_per_cell),
                                       cells_per_block=(self.cell_per_block, self.cell_per_block),
-                                      block_norm='L2-Hys', visualize=vis,
-                                      transform_sqrt=True, feature_vector=feature_vec)
+                                      visualize=vis, transform_sqrt=False, feature_vector=feature_vec)
             self.tools.plot_image(hog_image, "HOG image")
             return features
         # Otherwise call with one output
@@ -95,8 +97,7 @@ class VehicleDetector:
             features = hog(img, orientations=self.orient,
                            pixels_per_cell=(self.pixel_per_cell, self.pixel_per_cell),
                            cells_per_block=(self.cell_per_block, self.cell_per_block),
-                           block_norm='L2-Hys', visualize=vis,
-                           transform_sqrt=True, feature_vector=feature_vec)
+                           visualize=vis, transform_sqrt=False, feature_vector=feature_vec)
             return features
 
     def extract_features(self, imgs, spatial_feat=True, hist_feat=True, hog_feat=True):
@@ -117,14 +118,14 @@ class VehicleDetector:
             file_features = []
 
             # import matplotlib.image as mpimg
-            # image = mpimg.imread(file)
+            image = mpimg.imread(file)
             # image = image.astype(np.float32)*255
 
             # use cv2.imread to scale PNG images in the [0, 255] range
-            image = cv2.imread(file)
+            # image = cv2.imread(file)
 
-            if not self.image_scaling_checked:
-                self.tools.check_image_scale(image)
+            # if not self.image_scaling_checked:
+            #     self.tools.check_image_scale(image)
 
             # apply color conversion if other than 'RGB'
             feature_image = self.imageProcessing.convert_color(image, self.color_space)
@@ -152,6 +153,73 @@ class VehicleDetector:
         # Return list of feature vectors
         return features
 
+    def classify_boxes(self, img, ystart, ystop, scale):
+        img = img.astype(np.float32) / 255
+        img_tosearch = img[ystart:ystop, :, :]
+
+        ctrans_tosearch = self.imageProcessing.convert_color(img_tosearch, conv=self.color_space)
+        if scale != 1:
+            imshape = ctrans_tosearch.shape
+            ctrans_tosearch = cv2.resize(ctrans_tosearch, (np.int(imshape[1] / scale), np.int(imshape[0] / scale)))
+
+        ch1 = ctrans_tosearch[:, :, 0]
+        ch2 = ctrans_tosearch[:, :, 1]
+        ch3 = ctrans_tosearch[:, :, 2]
+
+        # Define blocks and steps as above
+        nxblocks = (ch1.shape[1] // self.pixel_per_cell) - self.cell_per_block + 1
+        nyblocks = (ch1.shape[0] // self.pixel_per_cell) - self.cell_per_block + 1
+        nfeat_per_block = self.orient * self.cell_per_block ** 2
+
+        # 64 was the original sampling rate, with 8 cells and 8 pix per cell
+        window = 64
+        nblocks_per_window = (window // self.pixel_per_cell) - self.cell_per_block + 1
+        cells_per_step = 2  # Instead of overlap, define how many cells to step
+        nxsteps = (nxblocks - nblocks_per_window) // cells_per_step + 1
+        nysteps = (nyblocks - nblocks_per_window) // cells_per_step + 1
+
+        # Compute individual channel HOG features for the entire image
+        hog1 = self.get_hog_features(ch1, feature_vec=False)
+        hog2 = self.get_hog_features(ch2, feature_vec=False)
+        hog3 = self.get_hog_features(ch3, feature_vec=False)
+
+        frame_detected_boxes = []
+
+        for xb in range(nxsteps):
+            for yb in range(nysteps):
+                ypos = yb * cells_per_step
+                xpos = xb * cells_per_step
+                # Extract HOG for this patch
+                hog_feat1 = hog1[ypos:ypos + nblocks_per_window, xpos:xpos + nblocks_per_window].ravel()
+                hog_feat2 = hog2[ypos:ypos + nblocks_per_window, xpos:xpos + nblocks_per_window].ravel()
+                hog_feat3 = hog3[ypos:ypos + nblocks_per_window, xpos:xpos + nblocks_per_window].ravel()
+                hog_features = np.hstack((hog_feat1, hog_feat2, hog_feat3))
+
+                xleft = xpos * self.pixel_per_cell
+                ytop = ypos * self.pixel_per_cell
+
+                # # Extract the image patch
+                # subimg = cv2.resize(ctrans_tosearch[ytop:ytop + window, xleft:xleft + window], (64, 64))
+                # # Get color features
+                # spatial_features = self.bin_spatial(subimg)
+                # hist_features = self.color_hist(subimg)
+                #
+                # # Scale features and make a prediction
+                # test_features = self.X_scaler.transform(
+                #     np.hstack((spatial_features, hist_features, hog_features)).reshape(1, -1))
+                # test_prediction = self.svc.predict(test_features)
+                test_features = self.X_scaler.transform(
+                    np.hstack(hog_features).reshape(1, -1))
+                test_prediction = self.svc.predict(test_features)
+
+                if test_prediction == 1:
+                    xbox_left = np.int(xleft * scale)
+                    ytop_draw = np.int(ytop * scale)
+                    win_draw = np.int(window * scale)
+                    frame_detected_boxes.append(((xbox_left, ytop_draw + ystart),
+                                                 (xbox_left + win_draw, ytop_draw + win_draw + ystart)))
+        return frame_detected_boxes
+
     @staticmethod
     def add_heat(heatmap, bbox_list):
         # Iterate through list of bboxes
@@ -173,6 +241,8 @@ class VehicleDetector:
     def draw_labeled_bboxes(self, img, labels):
         # Iterate through all detected cars
         detections_per_frame = None
+        bbox_hight = 100    # in px
+        bbox_length = 150    # in px
         font = cv2.FONT_HERSHEY_SIMPLEX
         fontScale = 1
         lineType = 2
@@ -185,27 +255,17 @@ class VehicleDetector:
             nonzerox = np.array(nonzero[1])
             # Define a bounding box based on min/max x and y
             bbox = ((np.min(nonzerox), np.min(nonzeroy)), (np.max(nonzerox), np.max(nonzeroy)))
-            if detections_per_frame is None:
-                detections_per_frame = [bbox]
-            else:
-                detections_per_frame.append(bbox)
-            # Draw the box on the image for debugging purposes
-            # cv2.rectangle(img, bbox[0], bbox[1], (124, 252, 0), 6)
-            # cv2.putText(img, str(car_number), bbox[0], font, fontScale, (124, 252, 0), lineType)
 
-        if detections_per_frame:
-            self.vehiclesTracker.add_detections_in_frame(detections_per_frame)
-            cars_bboxes = self.vehiclesTracker.get_vehicles_bboxes()
-            for car_num, bbox in enumerate(cars_bboxes.values()):
-                cv2.rectangle(img, bbox[0], bbox[1], (0, 0, 255), 6)
-                cv2.putText(img, "car "+str(car_num), bbox[0], font, fontScale, (0, 0, 255), lineType)
+            # Draw the box on the image for debugging purposes
+            cv2.rectangle(img, bbox[0], (bbox[0][0]+bbox_length, bbox[0][1]+bbox_hight), (0, 0, 255), 6)
+            cv2.putText(img, str(car_number), bbox[0], font, fontScale, (0, 0, 255), lineType)
 
         # Return the image
         return img
 
     def train_classifier(self):
-        spatial_feat = True     # Spatial features on or off
-        hist_feat = True        # Histogram features on or off
+        spatial_feat = False     # Spatial features on or off
+        hist_feat = False        # Histogram features on or off
         hog_feat = True         # HOG features on or off
 
         cars, noncars = self.tools.get_car_noncar_images()
@@ -253,101 +313,47 @@ class VehicleDetector:
         self.tools.dump_parameters([self.svc, self.X_scaler], "svm_params")
         print("SVM Parameters successfully dumped")
 
-    def detect_vehicles(self, img, output_image, ystart, ystop, scale):
+    def detect_vehicles(self, img, output_image, y_ranges):
         """
         Extract features using hog sub-sampling and make predictions
 
         :param img: an image, where vehicles should be found
         :param output_image: an image with already drawn detected lanes
-        :param ystart: value on the y-axis of the image, where the search should start
-        :param ystop: value on the y-axis of the image, where the search should end
-        :param scale:
+        :param y_ranges: an array, containing tuples with:
+            ystart: value on the y-axis of the image, where the search should start
+            ystop: value on the y-axis of the image, where the search should end
+            scale: a number to which extent to up-/down-scale the image
         :return:
         """
-
-        #img = img.astype(np.float32) / 255
-        #img_tosearch = img[ystart:ystop, :, :]
-        img_tosearch = img[ystart:ystop, :, :]
-        heat = np.zeros_like(img[:, :, 0]).astype(np.float)
-
-        ctrans_tosearch = self.imageProcessing.convert_color(img_tosearch, conv='YCrCb')
-        if scale != 1:
-            imshape = ctrans_tosearch.shape
-            ctrans_tosearch = cv2.resize(ctrans_tosearch, (np.int(imshape[1] / scale), np.int(imshape[0] / scale)))
-
-        ch1 = ctrans_tosearch[:, :, 0]
-        ch2 = ctrans_tosearch[:, :, 1]
-        ch3 = ctrans_tosearch[:, :, 2]
-
-        # Define blocks and steps as above
-        nxblocks = (ch1.shape[1] // self.pixel_per_cell) - self.cell_per_block + 1
-        nyblocks = (ch1.shape[0] // self.pixel_per_cell) - self.cell_per_block + 1
-        nfeat_per_block = self.orient * self.cell_per_block ** 2
-
-        # 64 was the original sampling rate, with 8 cells and 8 pix per cell
-        window = 64
-        nblocks_per_window = (window // self.pixel_per_cell) - self.cell_per_block + 1
-        cells_per_step = 2  # Instead of overlap, define how many cells to step
-        nxsteps = (nxblocks - nblocks_per_window) // cells_per_step + 1
-        nysteps = (nyblocks - nblocks_per_window) // cells_per_step + 1
-
-        # Compute individual channel HOG features for the entire image
-        hog1 = self.get_hog_features(ch1, feature_vec=False)
-        hog2 = self.get_hog_features(ch2, feature_vec=False)
-        hog3 = self.get_hog_features(ch3, feature_vec=False)
-
         frame_detected_boxes = []
+        for ystart, ystop, scale in y_ranges:
+            frame_detected_boxes.extend(self.classify_boxes(img, ystart, ystop, scale))
 
-        for xb in range(nxsteps):
-            for yb in range(nysteps):
-                ypos = yb * cells_per_step
-                xpos = xb * cells_per_step
-                # Extract HOG for this patch
-                hog_feat1 = hog1[ypos:ypos + nblocks_per_window, xpos:xpos + nblocks_per_window].ravel()
-                hog_feat2 = hog2[ypos:ypos + nblocks_per_window, xpos:xpos + nblocks_per_window].ravel()
-                hog_feat3 = hog3[ypos:ypos + nblocks_per_window, xpos:xpos + nblocks_per_window].ravel()
-                hog_features = np.hstack((hog_feat1, hog_feat2, hog_feat3))
+        if(len(frame_detected_boxes)) > 0:
+            self.detectionTracker.prev_frames.append(frame_detected_boxes)
 
-                xleft = xpos * self.pixel_per_cell
-                ytop = ypos * self.pixel_per_cell
-
-                # Extract the image patch
-                subimg = cv2.resize(ctrans_tosearch[ytop:ytop + window, xleft:xleft + window], (64, 64))
-
-                # Get color features
-                spatial_features = self.bin_spatial(subimg)
-                hist_features = self.color_hist(subimg)
-
-                # Scale features and make a prediction
-                test_features = self.X_scaler.transform(
-                    np.hstack((spatial_features, hist_features, hog_features)).reshape(1, -1))
-                test_prediction = self.svc.predict(test_features)
-
-                if test_prediction == 1:
-                    xbox_left = np.int(xleft * scale)
-                    ytop_draw = np.int(ytop * scale)
-                    win_draw = np.int(window * scale)
-                    frame_detected_boxes.append(((xbox_left, ytop_draw + ystart),
-                                                 (xbox_left + win_draw, ytop_draw + win_draw + ystart)))
-                    # cv2.rectangle(output_image, frame_detected_boxes[-1][0], frame_detected_boxes[-1][1],
-                    #               (0, 0, 255), 6)
-
+        heatmap_img = np.zeros_like(img[:, :, 0]).astype(np.float)
         # Add heat to each box in box list
-        heat = self.add_heat(heat, frame_detected_boxes)
+        for rect_set in self.detectionTracker.prev_frames:
+            # smooth out the heatmap over last detections + current
+            heatmap_img = self.add_heat(heatmap_img, rect_set)
 
         # Apply threshold to help remove false positives
-        heat = self.apply_threshold(heat, 2)
+        heatmap_img = self.apply_threshold(heatmap_img, self.heat_threshold +
+                                           len(self.detectionTracker.prev_frames) // 2)
 
         # Visualize the heatmap when displaying
-        heatmap = np.clip(heat, 0, 255)
+        heatmap = np.clip(heatmap_img, 0, 255)
         # self.tools.plot_image(heatmap)
 
         # Find final boxes from heatmap using label function
         labels = label(heatmap)
         draw_img = self.draw_labeled_bboxes(output_image, labels)
+        return draw_img
 
         # uncomment below to plot heat map per frame
         # import matplotlib.pyplot as plt
+        #
         # fig = plt.figure()
         # plt.subplot(121)
         # plt.imshow(draw_img)
@@ -356,6 +362,13 @@ class VehicleDetector:
         # plt.imshow(heatmap, cmap='hot')
         # plt.title('Heat Map')
         # fig.tight_layout()
-        # plt.show()
-
-        return draw_img
+        # # plt.show()
+        #
+        # # If we haven't already shown or saved the plot, then we need to
+        # # draw the figure first...
+        # fig.canvas.draw()
+        # # Now we can save it to a numpy array.
+        # data = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep='')
+        # data = data.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+        #
+        # return data
